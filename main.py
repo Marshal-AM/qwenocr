@@ -1,16 +1,17 @@
-from transformers import AutoProcessor, Gemma3nForConditionalGeneration
+from transformers import AutoProcessor, AutoModelForImageTextToText
 from PIL import Image
 import torch
 import os
 from dotenv import load_dotenv
 
-def recognize_text_from_image(image_path, hf_token):
+def recognize_prescription_text(image_path, hf_token):
     """
-    Recognizes text from an image using Gemma 3n vision model.
+    Recognizes text from a prescription image using MedGemma 4B model.
+    MedGemma is specifically trained on medical images and text.
     
     Args:
-        image_path: Path to the image file
-        hf_token: HuggingFace API token for gated model access
+        image_path: Path to the prescription image file
+        hf_token: HuggingFace API token for model access
     
     Returns:
         Recognized text as string
@@ -19,38 +20,38 @@ def recognize_text_from_image(image_path, hf_token):
     if not os.path.exists(image_path):
         raise FileNotFoundError(f"Image file not found: {image_path}")
     
-    print("Loading image...")
+    print("Loading prescription image...")
     image = Image.open(image_path).convert("RGB")
     print(f"Image size: {image.size}")
     
-    print("Loading Gemma 3n model and processor...")
-    print("(This may take a while on first run - downloading ~8GB model)")
+    print("\nLoading MedGemma 4B model and processor...")
+    print("(This may take a while on first run - downloading ~4GB model)")
     
     model_id = "google/medgemma-4b-it"
     
     # Load model with authentication token
-    model = Gemma3nForConditionalGeneration.from_pretrained(
+    model = AutoModelForImageTextToText.from_pretrained(
         model_id,
-        device_map="auto",
         torch_dtype=torch.bfloat16,
+        device_map="auto",
         token=hf_token
-    ).eval()
+    )
     
     processor = AutoProcessor.from_pretrained(model_id, token=hf_token)
     
-    print("Processing image with vision model...")
+    print("Processing prescription with medical vision model...")
     
-    # Create messages for OCR task
+    # Create messages optimized for prescription OCR
     messages = [
         {
             "role": "system",
-            "content": [{"type": "text", "text": "You are an expert at reading and transcribing handwritten text, including medical prescriptions."}]
+            "content": [{"type": "text", "text": "You are an expert medical document reader specializing in reading prescriptions and medical handwriting."}]
         },
         {
             "role": "user",
             "content": [
-                {"type": "image", "image": image},
-                {"type": "text", "text": "Please carefully read and transcribe ALL the MEDICATION visible in this image. Extract every word, number, and detail you can see, maintaining the structure and layout as much as possible. MOST IMPORTANT: When you extract a MEDICATION, check whether it's a REAL medicne which is used out there, DO NOT simply give text data, CHECK THOUROUGHLY and THEN give me the medication list"}
+                {"type": "text", "text": "Please carefully read and transcribe ALL text visible in this prescription image. Extract every detail including: patient information, medication names, dosages, instructions, doctor's name, date, and any other text you can see. Preserve the structure and layout as much as possible."},
+                {"type": "image", "image": image}
             ]
         }
     ]
@@ -61,18 +62,18 @@ def recognize_text_from_image(image_path, hf_token):
         add_generation_prompt=True,
         tokenize=True,
         return_dict=True,
-        return_tensors="pt",
-    ).to(model.device)
+        return_tensors="pt"
+    ).to(model.device, dtype=torch.bfloat16)
     
     input_len = inputs["input_ids"].shape[-1]
     
-    print("Generating text from image...")
+    print("Generating transcription from prescription...")
     
-    # Generate response
+    # Generate response with higher token limit for detailed transcriptions
     with torch.inference_mode():
         generation = model.generate(
             **inputs,
-            max_new_tokens=1000,
+            max_new_tokens=1500,
             do_sample=False,
             temperature=0.1
         )
@@ -107,15 +108,17 @@ if __name__ == "__main__":
                 break
     
     try:
-        recognized_text = recognize_text_from_image(image_file, HF_TOKEN)
+        recognized_text = recognize_prescription_text(image_file, HF_TOKEN)
         
         print("\n" + "="*70)
-        print("RECOGNIZED TEXT FROM PRESCRIPTION:")
+        print("PRESCRIPTION TRANSCRIPTION (MedGemma 4B):")
         print("="*70)
         print(recognized_text)
         print("="*70)
+        print("\nNote: This is a medical AI model output. Always verify")
+        print("transcriptions with qualified healthcare professionals.")
         
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"\nError: {e}")
         import traceback
         traceback.print_exc()
