@@ -26,7 +26,7 @@ def recognize_text_from_image(image_path, hf_token):
     print("Loading Gemma 3n model and processor...")
     print("(This may take a while on first run - downloading ~8GB model)")
     
-    model_id = "google/gemma-3n-e4b-it"
+    model_id = "google/medgemma-4b-it"
     
     # Load model with authentication token
     model = Gemma3nForConditionalGeneration.from_pretrained(
