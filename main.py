@@ -22,7 +22,7 @@ def extract_prescription_text(image_path):
     
     # Load model and processor
     model = Qwen3VLForConditionalGeneration.from_pretrained(
-        "Qwen/Qwen3-VL-4B-Instruct", 
+        "Qwen/Qwen3-VL-8B-Instruct", 
         dtype="auto", 
         device_map="auto"
     )
@@ -45,7 +45,7 @@ def extract_prescription_text(image_path):
                 },
                 {
                     "type": "text", 
-                    "text": "This is a doctor's prescription. Please extract all the text from this prescription image, including patient details, doctor's name, medications, dosages, instructions, and any other relevant information. Provide the output in a clear, structured format."
+                    "text": "This is a doctor's prescription. Please extract all the text from this prescription image, including patient details, doctor's name, medications, dosages, instructions, and any other relevant information. Provide the output in a clear, structured format. Validate the extracted medicine names. Cross-check each medicine name with standard medical databases or common drug lists (like WHO ATC list, FDA database, or Indian drug index). Correct any likely misspellings or OCR errors (e.g., “Paracitamol” → “Paracetamol”)."
                 },
             ],
         }
