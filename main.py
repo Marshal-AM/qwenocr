@@ -50,7 +50,7 @@ def recognize_text_from_image(image_path, hf_token):
             "role": "user",
             "content": [
                 {"type": "image", "image": image},
-                {"type": "text", "text": "Please carefully read and transcribe ALL the text visible in this image. Extract every word, number, and detail you can see, maintaining the structure and layout as much as possible."}
+                {"type": "text", "text": "Please carefully read and transcribe ALL the MEDICATION visible in this image. Extract every word, number, and detail you can see, maintaining the structure and layout as much as possible. MOST IMPORTANT: When you extract a MEDICATION, check whether it's a REAL medicne which is used out there, DO NOT simply give text data, CHECK THOUROUGHLY and THEN give me the medication list"}
             ]
         }
     ]
