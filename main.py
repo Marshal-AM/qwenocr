@@ -22,7 +22,7 @@ def extract_prescription_text(image_path):
     
     # Load model and processor
     model = Qwen3VLForConditionalGeneration.from_pretrained(
-        "Qwen/Qwen3-VL-8B-Instruct", 
+        "Qwen/Qwen3-VL-30B-A3B-Instruct", 
         dtype="auto", 
         device_map="auto"
     )
