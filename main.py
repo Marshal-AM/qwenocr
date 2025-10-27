@@ -1,5 +1,6 @@
 import os
 import glob
+import torch
 from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
 from PIL import Image
 
@@ -22,7 +23,7 @@ def extract_prescription_text(image_path):
     
     # Load model and processor
     model = Qwen3VLForConditionalGeneration.from_pretrained(
-        "Qwen/Qwen3-VL-4B-Thinking-FP8", 
+        "Qwen/Qwen3-VL-4B-Instruct", 
         dtype="auto", 
         device_map="auto"
     )
@@ -45,7 +46,7 @@ def extract_prescription_text(image_path):
                 },
                 {
                     "type": "text", 
-                    "text": "This is a doctor's prescription. Please extract all the text from this prescription image, including patient details, doctor's name, medications, dosages, instructions, and any other relevant information. Provide the output in a clear, structured format. Validate the extracted medicine names. Cross-check each medicine name with standard medical databases or common drug lists (like WHO ATC list, FDA database, or Indian drug index). Correct any likely misspellings or OCR errors (e.g., “Paracitamol” → “Paracetamol”)."
+                    "text": "This is a doctor's prescription. Please extract all the text from this prescription image, including patient details, doctor's name, medications, dosages, instructions, and any other relevant information. Provide the output in a clear, structured format."
                 },
             ],
         }
@@ -68,6 +69,9 @@ def extract_prescription_text(image_path):
         **inputs, 
         max_new_tokens=2048,
         do_sample=False,  # Greedy decoding for more accurate OCR
+        temperature=0.7,
+        top_p=0.8,
+        top_k=20,
         repetition_penalty=1.0
     )
     
