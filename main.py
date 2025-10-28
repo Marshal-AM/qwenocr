@@ -5,6 +5,12 @@ import json
 from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
 from PIL import Image
 from dotenv import load_dotenv
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import JSONResponse
+from typing import List, Dict, Any
+import uvicorn
+from pathlib import Path
+import shutil
 
 # Load environment variables from .env file
 load_dotenv()
@@ -12,6 +18,21 @@ load_dotenv()
 # Google Custom Search API credentials from .env
 GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
 SEARCH_ENGINE_ID = os.getenv('SEARCH_ENGINE_ID')
+
+# Create FastAPI app
+app = FastAPI(
+    title="Prescription Medication Extraction API",
+    description="API for extracting and verifying medications from prescription images",
+    version="1.0.0"
+)
+
+# Global variables to store model (loaded once)
+model = None
+processor = None
+
+# Directory for uploaded images
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
 
 def check_env_variables():
     """Check if required environment variables are set"""
@@ -25,33 +46,23 @@ def check_env_variables():
     print(f"[ENV CHECK] ✓ GOOGLE_API_KEY: {GOOGLE_API_KEY[:10]}...{GOOGLE_API_KEY[-4:]}")
     print(f"[ENV CHECK] ✓ SEARCH_ENGINE_ID: {SEARCH_ENGINE_ID}")
 
-def find_prescription_image():
-    """Find image file starting with '99' in current directory"""
-    print("\n[STEP 0] Searching for prescription image...")
-    # Common image extensions
-    extensions = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.gif', '*.webp']
-    
-    for ext in extensions:
-        files = glob.glob(f"99{ext}") + glob.glob(f"99.{ext[2:]}")
-        if files:
-            print(f"[STEP 0] ✓ Found image: {files[0]}")
-            return files[0]
-    
-    raise FileNotFoundError("No image file starting with '99' found in current directory")
-
 def load_model():
     """Load Qwen3-VL model and processor"""
-    print("\n[MODEL LOADING] Loading Qwen3-VL model (this may take a few minutes)...")
+    global model, processor
     
-    model = Qwen3VLForConditionalGeneration.from_pretrained(
-        "Qwen/Qwen3-VL-8B-Instruct", 
-        dtype="auto", 
-        device_map="auto"
-    )
+    if model is None or processor is None:
+        print("\n[MODEL LOADING] Loading Qwen3-VL model (this may take a few minutes)...")
+        
+        model = Qwen3VLForConditionalGeneration.from_pretrained(
+            "Qwen/Qwen3-VL-8B-Instruct", 
+            dtype="auto", 
+            device_map="auto"
+        )
+        
+        processor = AutoProcessor.from_pretrained("Qwen/Qwen3-VL-8B-Instruct")
+        
+        print("[MODEL LOADING] ✓ Model loaded successfully")
     
-    processor = AutoProcessor.from_pretrained("Qwen/Qwen3-VL-8B-Instruct")
-    
-    print("[MODEL LOADING] ✓ Model loaded successfully")
     return model, processor
 
 def parse_timing_code(code):
@@ -394,8 +405,8 @@ Only provide the corrected name without any additional information like dosage o
     
     return verified_medications
 
-def output_final_list(patient_name, verified_medications):
-    """STEP 6: Output final verified medication list"""
+def build_final_list(patient_name, verified_medications):
+    """STEP 6: Build final verified medication list"""
     print("\n" + "="*60)
     print("[STEP 6] FINAL VERIFIED MEDICATION LIST")
     print("="*60)
@@ -410,7 +421,8 @@ def output_final_list(patient_name, verified_medications):
             'number': idx,
             'name': med['corrected_name'],
             'timing_code': med['timing_code'],
-            'timing': med['timing_readable']
+            'timing': med['timing_readable'],
+            'original_name': med['original_name'] if med['original_name'] != med['corrected_name'] else None
         }
         final_list.append(med_info)
         
@@ -422,21 +434,12 @@ def output_final_list(patient_name, verified_medications):
             print(f"   (Corrected from: {med['original_name']})")
         print()
     
-    # Save to file
-    output_file = "verified_prescription.json"
-    output_data = {
-        'patient_name': patient_name,
-        'medications': final_list
-    }
-    
-    with open(output_file, 'w', encoding='utf-8') as f:
-        json.dump(output_data, f, indent=2, ensure_ascii=False)
-    
-    print(f"[STEP 6] ✓ Final list saved to: {output_file}")
+    print(f"[STEP 6] ✓ Final list created")
     
     return final_list
 
-def main():
+def process_prescription_pipeline(image_path: str) -> Dict[str, Any]:
+    """Main processing pipeline"""
     try:
         print("\n" + "="*60)
         print("PRESCRIPTION MEDICATION EXTRACTION & VERIFICATION")
@@ -445,10 +448,7 @@ def main():
         # Check environment variables
         check_env_variables()
         
-        # Find prescription image
-        image_path = find_prescription_image()
-        
-        # Load model once
+        # Load model
         model, processor = load_model()
         
         # STEP 1: Extract patient name and medications
@@ -458,8 +458,7 @@ def main():
         patient_name, medications = parse_medications_list(extracted_text)
         
         if not medications:
-            print("\n[ERROR] No medications found in prescription!")
-            return
+            raise ValueError("No medications found in prescription!")
         
         # STEP 3 & 4: Google search for each medication
         search_results = search_all_medications(medications)
@@ -467,23 +466,118 @@ def main():
         # STEP 5: Verify medication names with LLM
         verified_medications = verify_medication_names(medications, search_results, model, processor)
         
-        # STEP 6: Output final list
-        final_list = output_final_list(patient_name, verified_medications)
+        # STEP 6: Build final list
+        final_list = build_final_list(patient_name, verified_medications)
         
         print("\n" + "="*60)
         print("PROCESS COMPLETED SUCCESSFULLY!")
         print("="*60)
         
-    except FileNotFoundError as e:
-        print(f"\n[ERROR] {e}")
-        print("Please ensure your prescription image is named '99.jpg', '99.png', or similar")
-    except ValueError as e:
-        print(f"\n[ERROR] {e}")
-        print("Please create a .env file with GOOGLE_API_KEY and SEARCH_ENGINE_ID")
+        return {
+            "status": "success",
+            "patient_name": patient_name,
+            "medications": final_list,
+            "total_medications": len(final_list)
+        }
+        
     except Exception as e:
         print(f"\n[ERROR] An error occurred: {e}")
         import traceback
         traceback.print_exc()
+        raise
+
+# FastAPI Endpoints
+
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {
+        "message": "Prescription Medication Extraction API",
+        "version": "1.0.0",
+        "endpoints": {
+            "/": "API information",
+            "/health": "Health check",
+            "/extract": "Extract medications from prescription (POST)",
+            "/docs": "API documentation"
+        }
+    }
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "model_loaded": model is not None and processor is not None,
+        "google_api_configured": GOOGLE_API_KEY is not None and SEARCH_ENGINE_ID is not None
+    }
+
+@app.post("/extract")
+async def extract_prescription(file: UploadFile = File(...)):
+    """
+    Extract medications from a prescription image
+    
+    Args:
+        file: Prescription image file (jpg, png, etc.)
+    
+    Returns:
+        JSON with patient name and verified medication list
+    """
+    try:
+        # Validate file type
+        if not file.content_type.startswith('image/'):
+            raise HTTPException(status_code=400, detail="File must be an image")
+        
+        # Save uploaded file
+        file_extension = Path(file.filename).suffix
+        file_path = UPLOAD_DIR / f"prescription_{file.filename}"
+        
+        print(f"\n[API] Saving uploaded file: {file_path}")
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        # Process the prescription
+        print(f"[API] Processing prescription...")
+        result = process_prescription_pipeline(str(file_path))
+        
+        # Clean up uploaded file
+        print(f"[API] Cleaning up uploaded file...")
+        file_path.unlink()
+        
+        return JSONResponse(content=result)
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@app.on_event("startup")
+async def startup_event():
+    """Load model on startup"""
+    print("\n" + "="*60)
+    print("STARTING PRESCRIPTION EXTRACTION API")
+    print("="*60)
+    try:
+        check_env_variables()
+        load_model()
+        print("\n[API] ✓ API ready to accept requests")
+    except Exception as e:
+        print(f"\n[API] ✗ Error during startup: {e}")
+        raise
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown"""
+    print("\n[API] Shutting down...")
+    # Clean up any remaining files in uploads directory
+    for file in UPLOAD_DIR.glob("*"):
+        file.unlink()
+    print("[API] ✓ Cleanup complete")
 
 if __name__ == "__main__":
-    main()
+    # Run the FastAPI server
+    uvicorn.run(
+        "main:app",  # Change "main" to your script filename if different
+        host="0.0.0.0",
+        port=8000,
+        reload=False  # Set to True for development
+    )
