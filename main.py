@@ -37,7 +37,7 @@ def find_prescription_image():
             print(f"[STEP 0] ✓ Found image: {files[0]}")
             return files[0]
     
-    raise FileNotFoundError("No image file starting with '1' found in current directory")
+    raise FileNotFoundError("No image file starting with '99' found in current directory")
 
 def load_model():
     """Load Qwen3-VL model and processor"""
@@ -55,23 +55,18 @@ def load_model():
     return model, processor
 
 def parse_timing_code(code):
-    """Parse timing codes like 101, 010, 111 into readable format"""
-    timing_map = {
-        '1': 'Yes',
-        '0': 'No'
-    }
+    """Parse timing codes like 101, 010, 111, 1-1-1, 1-0-1 into readable format"""
+    # Remove any spaces and convert dashes to empty string for processing
+    code_clean = code.replace('-', '').replace(' ', '').strip()
     
-    if len(code) == 3:
-        morning = timing_map.get(code[0], '?')
-        afternoon = timing_map.get(code[1], '?')
-        night = timing_map.get(code[2], '?')
-        
+    # Handle various formats
+    if len(code_clean) == 3 and code_clean.isdigit():
         times = []
-        if code[0] == '1':
+        if code_clean[0] == '1':
             times.append('Morning')
-        if code[1] == '1':
+        if code_clean[1] == '1':
             times.append('Afternoon')
-        if code[2] == '1':
+        if code_clean[2] == '1':
             times.append('Night')
         
         return ', '.join(times) if times else 'Unknown'
@@ -104,12 +99,14 @@ def extract_patient_and_medications(image_path, model, processor):
 
 1. Patient Name
 2. All medications listed in the prescription
-3. For each medication, identify the timing code (like 101, 010, 111, etc.)
+3. For each medication, identify the timing code (like 101, 010, 111, 1-1-1, 1-0-1, etc.)
 
 Note: The timing codes mean:
-- 101 = Morning and Night
-- 010 = Afternoon only
-- 111 = Morning, Afternoon, and Night
+- 1-1-1 or 111 = Morning, Afternoon, and Night
+- 1-0-1 or 101 = Morning and Night
+- 1-0-0 or 100 = Morning only
+- 0-1-0 or 010 = Afternoon only
+- 0-0-1 or 001 = Night only
 - First digit = Morning, Second digit = Afternoon, Third digit = Night
 - 1 means take medicine, 0 means don't take
 
@@ -121,6 +118,7 @@ MEDICATIONS:
 2. [Medicine Name] - Timing Code: [code]
 ...
 
+IMPORTANT: Keep the timing code EXACTLY as it appears in the prescription. Do not modify it.
 Be very careful to extract the exact medication names and timing codes as they appear."""
                 },
             ],
@@ -200,20 +198,20 @@ def parse_medications_list(extracted_text):
             # Try to parse medication lines
             # Format: "1. Medicine Name - Timing Code: 101"
             if '-' in line and 'Timing' in line:
-                parts = line.split('-')
-                med_name = parts[0].strip()
-                # Remove numbering if present
-                if med_name and med_name[0].isdigit():
-                    med_name = med_name.split('.', 1)[1].strip() if '.' in med_name else med_name
-                
-                timing_part = parts[1].strip()
-                timing_code = timing_part.split(':')[1].strip() if ':' in timing_part else "Unknown"
-                
-                medications.append({
-                    'name': med_name,
-                    'timing_code': timing_code,
-                    'timing_readable': parse_timing_code(timing_code)
-                })
+                parts = line.split(' - Timing Code:')
+                if len(parts) == 2:
+                    med_name = parts[0].strip()
+                    # Remove numbering if present
+                    if med_name and med_name[0].isdigit():
+                        med_name = med_name.split('.', 1)[1].strip() if '.' in med_name else med_name
+                    
+                    timing_code = parts[1].strip()
+                    
+                    medications.append({
+                        'name': med_name,
+                        'timing_code': timing_code,
+                        'timing_readable': parse_timing_code(timing_code)
+                    })
     
     print(f"[STEP 2] ✓ Found {len(medications)} medications")
     print("\n[STEP 2] Medications List:")
@@ -297,7 +295,12 @@ def verify_medication_names(medications, search_results, model, processor):
         
         if not results:
             print(f"[STEP 5] ⚠ No search results available, keeping original name")
-            verified_medications.append(med)
+            verified_medications.append({
+                'original_name': med_name,
+                'corrected_name': med_name,
+                'timing_code': med['timing_code'],
+                'timing_readable': med['timing_readable']
+            })
             continue
         
         # Prepare context from search results
@@ -378,8 +381,8 @@ Only provide the corrected name without any additional information like dosage o
         verified_med = {
             'original_name': med_name,
             'corrected_name': corrected_name,
-            'timing_code': med['timing_code'],
-            'timing_readable': med['timing_readable']
+            'timing_code': med['timing_code'],  # Keep original timing code AS IS
+            'timing_readable': med['timing_readable']  # Keep original timing readable AS IS
         }
         
         verified_medications.append(verified_med)
@@ -473,7 +476,7 @@ def main():
         
     except FileNotFoundError as e:
         print(f"\n[ERROR] {e}")
-        print("Please ensure your prescription image is named '1.jpg', '1.png', or similar")
+        print("Please ensure your prescription image is named '99.jpg', '99.png', or similar")
     except ValueError as e:
         print(f"\n[ERROR] {e}")
         print("Please create a .env file with GOOGLE_API_KEY and SEARCH_ENGINE_ID")
