@@ -26,13 +26,13 @@ def check_env_variables():
     print(f"[ENV CHECK] ✓ SEARCH_ENGINE_ID: {SEARCH_ENGINE_ID}")
 
 def find_prescription_image():
-    """Find image file starting with '1' in current directory"""
+    """Find image file starting with '99' in current directory"""
     print("\n[STEP 0] Searching for prescription image...")
     # Common image extensions
     extensions = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.gif', '*.webp']
     
     for ext in extensions:
-        files = glob.glob(f"1{ext}") + glob.glob(f"1.{ext[2:]}")
+        files = glob.glob(f"99{ext}") + glob.glob(f"99.{ext[2:]}")
         if files:
             print(f"[STEP 0] ✓ Found image: {files[0]}")
             return files[0]
