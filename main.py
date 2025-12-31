@@ -450,8 +450,13 @@ def build_final_list(patient_name, verified_medications):
         schedule = timing_code_to_schedule(med['timing_code'])
         
         med_info = {
+            'number': idx,
+            'name': med['corrected_name'],
             'medication': med['corrected_name'],
-            'schedule': schedule
+            'timing_code': med['timing_code'],
+            'timing': med['timing_readable'],
+            'schedule': schedule,
+            'original_name': med['original_name'] if med['original_name'] != med['corrected_name'] else None
         }
         final_list.append(med_info)
         
