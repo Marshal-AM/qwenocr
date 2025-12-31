@@ -84,6 +84,35 @@ def parse_timing_code(code):
     
     return code
 
+def timing_code_to_schedule(timing_code):
+    """Convert timing code to schedule format with time and quantity"""
+    # Remove any spaces and convert dashes to empty string for processing
+    code_clean = timing_code.replace('-', '').replace(' ', '').strip()
+    
+    schedule = []
+    
+    # Handle various formats
+    if len(code_clean) == 3 and code_clean.isdigit():
+        # First digit = Morning, Second digit = Afternoon, Third digit = Evening/Night
+        if code_clean[0] == '1':
+            schedule.append({
+                "time": "MORNING",
+                "quantity": "1"
+            })
+        if code_clean[1] == '1':
+            schedule.append({
+                "time": "AFTERNOON",
+                "quantity": "1"
+            })
+        if code_clean[2] == '1':
+            schedule.append({
+                "time": "EVENING",
+                "quantity": "1"
+            })
+    
+    # If no schedule created, return empty list
+    return schedule if schedule else []
+
 def extract_patient_and_medications(image_path, model, processor):
     """STEP 1: Extract patient name and medications with timing codes"""
     print("\n" + "="*60)
@@ -417,18 +446,19 @@ def build_final_list(patient_name, verified_medications):
     
     final_list = []
     for idx, med in enumerate(verified_medications, 1):
+        # Convert timing code to schedule format
+        schedule = timing_code_to_schedule(med['timing_code'])
+        
         med_info = {
-            'number': idx,
-            'name': med['corrected_name'],
-            'timing_code': med['timing_code'],
-            'timing': med['timing_readable'],
-            'original_name': med['original_name'] if med['original_name'] != med['corrected_name'] else None
+            'medication': med['corrected_name'],
+            'schedule': schedule
         }
         final_list.append(med_info)
         
         print(f"{idx}. {med['corrected_name']}")
         print(f"   Timing Code: {med['timing_code']}")
         print(f"   Intake Times: {med['timing_readable']}")
+        print(f"   Schedule: {schedule}")
         
         if med['original_name'] != med['corrected_name']:
             print(f"   (Corrected from: {med['original_name']})")
